@@ -81,6 +81,19 @@ target_compile_definitions(hoja_lib
 )
 
 # Pull in pico libraries that we need
+if(PICO_CYW43_SUPPORTED)
+  set(CYW43_LIBS
+      pico_cyw43_arch_threadsafe_background 
+      pico_btstack_cyw43 
+      pico_btstack_hci_transport_cyw43 
+      pico_btstack_ble 
+      pico_btstack_classic
+  )
+else()
+  set(CYW43_LIBS "")
+  message(STATUS "CYW43 support disabled; not linking CYW43 libraries.")
+endif()
+
 target_link_libraries(hoja_lib INTERFACE
   pico_stdlib
   pico_bootrom
@@ -89,11 +102,7 @@ target_link_libraries(hoja_lib INTERFACE
   pico_rand
   pico_float
 
-  pico_cyw43_arch_threadsafe_background 
-  pico_btstack_cyw43 
-  pico_btstack_hci_transport_cyw43 
-  pico_btstack_ble 
-  pico_btstack_classic 
+  ${CYW43_LIBS}
 
   hardware_exception
   hardware_gpio
