@@ -24,6 +24,10 @@
 #define IMU_POLLING_INTERVAL 2500
 #define IMU_CALIBRATE_CYCLES 4000
 
+#define Z_OFFSET       4500    // Subtract 4500 from the raw average Z value
+#define Z_THRESHOLD    4000    // Threshold on the adjusted Z value
+#define FIXED_Z_OUTPUT 0       // When below threshold, force Z to 0
+
 // Define data that is safe to access
 // from any core at any time
 MUTEX_HAL_INIT(_imu_mutex);
@@ -312,38 +316,54 @@ void imu_config_cmd(imu_cmd_t cmd, webreport_cmd_confirm_t cb)
 // IMU module operational task
 void imu_task(uint32_t timestamp)
 {
-  static interval_s interval = {0};
+    static interval_s interval = {0};
 
-  if (interval_run(timestamp, IMU_POLLING_INTERVAL, &interval))
-  {
-    if(imu_config->imu_disabled==1)
+    if (interval_run(timestamp, IMU_POLLING_INTERVAL, &interval))
     {
-        // Zero out only the gyroscope fields:
-        _imu_buffer_a.gx = 0;
-        _imu_buffer_a.gy = 0;
-        _imu_buffer_a.gz = 0;
-        _imu_buffer_b.gx = 0;
-        _imu_buffer_b.gy = 0;
-        _imu_buffer_b.gz = 0;
+        // Read sensor data into both buffers
+        _imu_read(&_imu_buffer_a, &_imu_buffer_b);
+
+        if (imu_config->imu_disabled == 1)
+        {
+            // When motion is disabled, process the Z axis:
+            // 1. Average the Z values from both buffers.
+            int avg_z = (_imu_buffer_a.az + _imu_buffer_b.az) / 2;
+            // 2. Apply the negative offset.
+            int adjusted_z = avg_z - Z_OFFSET;
+            // 3. If the adjusted value is below the threshold, force it to FIXED_Z_OUTPUT; otherwise, leave it.
+            int final_z = (adjusted_z < Z_THRESHOLD) ? FIXED_Z_OUTPUT : adjusted_z;
+            
+            // Override Z in both buffers with the computed final value.
+            _imu_buffer_a.az = final_z;
+            _imu_buffer_b.az = final_z;
+
+            // Also, when motion is disabled, zero out gyro and accelerometer X & Y:
+            _imu_buffer_a.gx = 0;
+            _imu_buffer_a.gy = 0;
+            _imu_buffer_a.gz = 0;
+            _imu_buffer_b.gx = 0;
+            _imu_buffer_b.gy = 0;
+            _imu_buffer_b.gz = 0;
+            _imu_buffer_a.ax = 0;
+            _imu_buffer_a.ay = 0;
+            _imu_buffer_b.ax = 0;
+            _imu_buffer_b.ay = 0;
+        }
+        // Else, when motion is enabled, leave the sensor data unchanged.
         
-        // Mark the buffers as retrieved so they’re used downstream
+        // Mark both buffers as retrieved (whether processed or not)
         _imu_buffer_a.retrieved = true;
         _imu_buffer_b.retrieved = true;
-    }
-    else
-    {
-        // Read both accelerometer and gyroscope data normally
-        _imu_read(&_imu_buffer_a, &_imu_buffer_b);
+
+        // Process the data (averaging, FIFO, quaternion updates, etc.)
+        if (_imu_process_task)
+            _imu_process_task();
+        else
+            _imu_process_task = _imu_std_function;
     }
 
-    // Jump into appropriate IMU task if it's defined
-    if(_imu_process_task)
-      _imu_process_task();
-    else
-      _imu_process_task = _imu_std_function;
-  }
-
-  memcpy(&_safe_quaternion_data, &_imu_quat_state, sizeof(quaternion_s));
+    // Update the safe quaternion data for downstream processing/visualization.
+    memcpy(&_safe_quaternion_data, &_imu_quat_state, sizeof(quaternion_s));
 }
 
 // IMU module initialization function
