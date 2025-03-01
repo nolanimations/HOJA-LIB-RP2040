@@ -318,15 +318,22 @@ void imu_task(uint32_t timestamp)
   {
     if(imu_config->imu_disabled==1)
     {
-      memset(&_imu_buffer_a, 0, sizeof(imu_data_s));
-      memset(&_imu_buffer_b, 0, sizeof(imu_data_s));
-      _imu_buffer_a.retrieved = true;
-      _imu_buffer_b.retrieved = true;
+        // Zero out only the gyroscope fields:
+        _imu_buffer_a.gx = 0;
+        _imu_buffer_a.gy = 0;
+        _imu_buffer_a.gz = 0;
+        _imu_buffer_b.gx = 0;
+        _imu_buffer_b.gy = 0;
+        _imu_buffer_b.gz = 0;
+        
+        // Mark the buffers as retrieved so they’re used downstream
+        _imu_buffer_a.retrieved = true;
+        _imu_buffer_b.retrieved = true;
     }
     else
     {
-      // Read IMU data
-      _imu_read(&_imu_buffer_a, &_imu_buffer_b);
+        // Read both accelerometer and gyroscope data normally
+        _imu_read(&_imu_buffer_a, &_imu_buffer_b);
     }
 
     // Jump into appropriate IMU task if it's defined
